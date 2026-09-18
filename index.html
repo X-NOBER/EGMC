@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>eag1eR</title>
+  <link rel="stylesheet" href="launcher.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-text">
+          <h1>eag1eR</h1>
+          <p class="brand-sub">
+            <span class="ind-dot ind-dot--local" aria-hidden="true"></span>
+            Local files
+          </p>
+        </div>
+      </div>
+
+      <label class="search" id="search-wrap">
+        <span class="sr-only">Search clients</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14" />
+        </svg>
+        <input id="search" type="search" placeholder="Search versions and clients" autocomplete="off" />
+      </label>
+    </header>
+
+    <section class="toolbar">
+      <div class="tabs" role="tablist" aria-label="Catalog">
+        <button type="button" class="tab is-active" data-tab="all" role="tab" aria-selected="true">
+          <span class="ind-dot ind-dot--all" aria-hidden="true"></span>
+          All
+          <span class="tab-count" id="count-all">0</span>
+        </button>
+        <button type="button" class="tab" data-tab="client" role="tab" aria-selected="false">
+          <span class="ind-dot ind-dot--client" aria-hidden="true"></span>
+          Clients
+          <span class="tab-count" id="count-client">0</span>
+        </button>
+        <button type="button" class="tab" data-tab="vanilla" role="tab" aria-selected="false">
+          <span class="ind-dot ind-dot--vanilla" aria-hidden="true"></span>
+          Vanilla
+          <span class="tab-count" id="count-vanilla">0</span>
+        </button>
+      </div>
+
+      <button type="button" id="grant-files" class="grant-btn" hidden>Allow folder access</button>
+
+      <div class="launch-mode">
+        <p class="launch-mode-label" id="launch-mode-label">Open as</p>
+        <div class="mode-toggle" role="radiogroup" aria-labelledby="launch-mode-label">
+          <button type="button" class="mode-btn is-active" data-mode="about-blank" role="radio" aria-checked="true">
+            about:blank
+          </button>
+          <button type="button" class="mode-btn" data-mode="blob" role="radio" aria-checked="false">
+            Blob URL
+          </button>
+        </div>
+        <p id="mode-help" class="mode-help">Writes the client into a blank tab. Worlds usually save.</p>
+        <p class="mode-active">
+          <span class="ind-dot ind-dot--mode" aria-hidden="true"></span>
+          <span id="mode-indicator">about:blank</span>
+        </p>
+      </div>
+    </section>
+
+    <div class="indicator-bar" id="indicator-bar" aria-live="polite"></div>
+
+    <p id="banner" class="banner" hidden></p>
+    <div class="workspace">
+      <div>
+        <p id="status" class="status">Loading catalog…</p>
+        <div id="grid" class="grid"></div>
+      </div>
+      <aside class="packs" aria-label="Texture packs">
+        <h2 class="packs-title">Texture packs</h2>
+        <p class="mode-help">Download a zip, then in game go to Options → Resource Packs and upload it. 1.8.9 packs fit 1.8 clients; 1.20.6 packs fit 1.20.6.</p>
+        <ul class="legend" aria-label="Pack indicators">
+          <li><span class="ind-dot ind-dot--ok" aria-hidden="true"></span> Fits selected client</li>
+          <li><span class="ind-dot ind-dot--warn" aria-hidden="true"></span> Version mismatch</li>
+          <li><span class="ind-dot ind-dot--muted" aria-hidden="true"></span> No client selected</li>
+        </ul>
+        <div id="pack-list" class="pack-list"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="stage" class="stage" hidden>
+    <div class="stage-bar">
+      <p id="stage-title">Playing</p>
+      <button type="button" id="close-stage" class="ghost compact">Back to launcher</button>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+      <p class="eyebrow" id="overlay-kicker">Launching</p>
+      <h2 id="overlay-title">Client</h2>
+      <p id="overlay-msg">Downloading client…</p>
+      <div
+        class="progress"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        id="overlay-progress"
+      >
+        <div id="overlay-fill" class="progress-fill"></div>
+      </div>
+      <p id="overlay-pct" class="pct">0%</p>
+      <button type="button" id="cancel-launch" class="ghost">Cancel</button>
+    </div>
+  </div>
+
+  <script src="launcher.js"></script>
+</body>
+</html>
