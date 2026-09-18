@@ -950,10 +950,6 @@ body {
       <div class="brand">
         <div class="brand-text">
           <h1>eag1eR</h1>
-          <p class="brand-sub">
-            <span class="ind-dot ind-dot--local" aria-hidden="true"></span>
-            jsDelivr CDN
-          </p>
         </div>
       </div>
 
@@ -1035,7 +1031,7 @@ body {
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
       <p class="eyebrow" id="overlay-kicker">Launching</p>
       <h2 id="overlay-title">Client</h2>
-      <p id="overlay-msg">Downloading client…</p>
+      <p id="overlay-msg">Loading…</p>
       <div
         class="progress"
         role="progressbar"
@@ -1274,7 +1270,6 @@ function renderIndicators(visibleCount) {
   }
 
   indicatorBar.append(chip("Launch", launchMode === "blob" ? "Blob URL" : "about:blank", "accent"));
-  indicatorBar.append(chip("Read", "jsDelivr", "ok"));
 
   if (client) {
     indicatorBar.append(chip("Selected", client.name, "ok"));
@@ -1339,8 +1334,11 @@ function renderPacks() {
     const dotClass = !client ? "ind-dot--muted" : compatible ? "ind-dot--ok" : "ind-dot--warn";
     const fitLabel = !client ? "Pick a client to check fit" : compatible ? "Fits selected client" : "Wrong MC version";
     link.className = `pack${compatible ? "" : " is-incompatible"}${!client ? " is-neutral" : ""}`;
-    link.href = cdnUrl(pack.file).href;
-    link.rel = "noopener noreferrer";
+    link.href = "#";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      downloadPack(pack);
+    });
     link.innerHTML = `
       <div class="pack-row">
         <span class="ind-dot ${dotClass}" aria-hidden="true"></span>
@@ -1565,22 +1563,39 @@ function cdnUrl(path) {
   return new URL(encoded, CDN_BASE);
 }
 
-async function readClientHttp(url, onProgress, signal) {
-  const response = await fetch(url, { signal, mode: "cors" });
+async function fetchCdnBlob(path, onProgress, signal, type) {
+  const response = await fetch(cdnUrl(path), { signal, mode: "cors" });
   if (!response.ok) {
-    throw new Error(`Could not fetch ${url.href} (${response.status})`);
+    throw new Error("Could not load client.");
   }
   const total = Number(response.headers.get("Content-Length")) || 0;
   if (response.body) {
-    return streamToBlob(response.body, total, "text/html", onProgress, signal);
+    return streamToBlob(response.body, total, type, onProgress, signal);
   }
   const blob = await response.blob();
   onProgress(100, blob.size, blob.size);
-  return blob;
+  return new Blob([blob], { type });
 }
 
 async function loadClientBlob(path, onProgress, signal) {
-  return readClientHttp(cdnUrl(path), onProgress, signal);
+  return fetchCdnBlob(path, onProgress, signal, "text/html;charset=utf-8");
+}
+
+async function downloadPack(pack) {
+  try {
+    const blob = await fetchCdnBlob(pack.file, () => {}, undefined, "application/zip");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = pack.filename;
+    a.rel = "noopener";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch {
+    showBanner("Could not download pack.");
+  }
 }
 
 function closeStage() {
@@ -1607,9 +1622,15 @@ function writeHtmlDocument(doc, html) {
   doc.close();
 }
 
+function runHtmlInTab(win, html) {
+  writeHtmlDocument(win.document, html);
+}
+
 async function putHtmlInTarget(target, mode, blob) {
+  const htmlBlob = new Blob([blob], { type: "text/html;charset=utf-8" });
+
   if (mode === "blob") {
-    const blobUrl = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(htmlBlob);
     blobUrls.push(blobUrl);
     if (target.location) {
       target.location.replace(blobUrl);
@@ -1619,13 +1640,16 @@ async function putHtmlInTarget(target, mode, blob) {
     return;
   }
 
-  const html = await blob.text();
+  const html = await htmlBlob.text();
   if (target.document) {
-    writeHtmlDocument(target.document, html);
+    runHtmlInTab(target, html);
     return;
   }
-  const doc = target.contentDocument;
-  writeHtmlDocument(doc, html);
+  if ("srcdoc" in target) {
+    target.srcdoc = html;
+    return;
+  }
+  writeHtmlDocument(target.contentDocument, html);
 }
 
 async function playInLauncher(item, mode, blob) {
@@ -1664,7 +1688,7 @@ async function launch(item) {
 
   overlay.hidden = false;
   overlayTitle.textContent = item.name;
-  setProgress(0, "Fetching from CDN…", 0, item.size);
+  setProgress(0, "Loading…", 0, item.size);
   render();
 
   const inPage = !win;
@@ -1672,11 +1696,6 @@ async function launch(item) {
     showBanner("Popups are blocked, so this client will open in the launcher window. Allow popups to use a separate tab.");
   } else {
     showBanner("");
-    try {
-      writeHtmlDocument(win.document, loadingDocument(item.name));
-    } catch {
-      // Fetch + inject can still replace this tab.
-    }
   }
 
   const controller = new AbortController();
@@ -1687,15 +1706,15 @@ async function launch(item) {
       item.file,
       (percent, received, total) => {
         if (gen !== launchGen) return;
-        setProgress(percent, "Fetching from CDN…", received, total);
+        setProgress(percent, "Loading…", received, total);
       },
       controller.signal,
     );
-    const blob = new Blob([fileBlob], { type: "text/html" });
+    const blob = new Blob([fileBlob], { type: "text/html;charset=utf-8" });
 
     if (gen !== launchGen) return;
     if (!inPage && (!launchWindow || launchWindow.closed)) return;
-    setProgress(100, "Writing into " + (mode === "blob" ? "blob URL" : "about:blank") + "…", blob.size, blob.size);
+    setProgress(100, "Starting…", blob.size, blob.size);
 
     if (inPage) {
       await playInLauncher(item, mode, blob);
@@ -1706,18 +1725,9 @@ async function launch(item) {
     launchWindow.focus();
   } catch (error) {
     if (error?.name === "AbortError" || gen !== launchGen) return;
-    showBanner(error.message || "Could not fetch client HTML.");
+    showBanner("Could not load client.");
     if (launchWindow && !launchWindow.closed) {
-      try {
-        writeHtmlDocument(
-          launchWindow.document,
-          loadingDocument("Fetch failed"),
-        );
-        const msg = launchWindow.document.getElementById("msg");
-        if (msg) msg.textContent = error.message || "Could not fetch client HTML.";
-      } catch {
-        launchWindow.close();
-      }
+      launchWindow.close();
     }
   } finally {
     if (gen !== launchGen) return;
