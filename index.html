@@ -1084,7 +1084,6 @@ const FALLBACK_PACKS = [
 const SKIP_FILES = new Set(["index.html"]);
 const MODE_KEY = "eagler.launchMode";
 const TAB_KEY = "eagler.tab";
-const CDN_BASE = "https://cdn.jsdelivr.net/gh/X-NOBER/EGMC@main/";
 const blobUrls = [];
 
 const grid = document.getElementById("grid");
@@ -1553,18 +1552,18 @@ async function streamToBlob(stream, total, type, onProgress, signal) {
   return new Blob(chunks, { type });
 }
 
-function cdnUrl(path) {
+function fileUrl(path) {
   const encoded = String(path)
     .replace(/\\/g, "/")
     .split("/")
     .filter(Boolean)
     .map(encodeURIComponent)
     .join("/");
-  return new URL(encoded, CDN_BASE);
+  return new URL(encoded, window.location.href);
 }
 
-async function fetchCdnBlob(path, onProgress, signal, type) {
-  const response = await fetch(cdnUrl(path), { signal, mode: "cors" });
+async function fetchFolderBlob(path, onProgress, signal, type) {
+  const response = await fetch(fileUrl(path), { signal });
   if (!response.ok) {
     throw new Error("Could not load client.");
   }
@@ -1578,12 +1577,12 @@ async function fetchCdnBlob(path, onProgress, signal, type) {
 }
 
 async function loadClientBlob(path, onProgress, signal) {
-  return fetchCdnBlob(path, onProgress, signal, "text/html;charset=utf-8");
+  return fetchFolderBlob(path, onProgress, signal, "text/html;charset=utf-8");
 }
 
 async function downloadPack(pack) {
   try {
-    const blob = await fetchCdnBlob(pack.file, () => {}, undefined, "application/zip");
+    const blob = await fetchFolderBlob(pack.file, () => {}, undefined, "application/zip");
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
