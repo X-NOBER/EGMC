@@ -34,6 +34,8 @@ const FALLBACK_PACKS = [
 const SKIP_FILES = new Set(["index.html"]);
 const MODE_KEY = "eagler.launchMode";
 const TAB_KEY = "eagler.tab";
+const CDN_BASE = "https://cdn.jsdelivr.net/gh/X-NOBER/EGMC@main/";
+const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/X-NOBER/EGMC/main/";
 const blobUrls = [];
 
 const grid = document.getElementById("grid");
@@ -57,7 +59,6 @@ const overlayProgress = document.getElementById("overlay-progress");
 const countAll = document.getElementById("count-all");
 const countClient = document.getElementById("count-client");
 const countVanilla = document.getElementById("count-vanilla");
-const grantBtn = document.getElementById("grant-files");
 
 let catalog = [];
 let packs = [];
@@ -69,8 +70,6 @@ let launchWindow = null;
 let launching = false;
 let launchingFile = "";
 let launchGen = 0;
-let rootDirHandle = null;
-let pickedFiles = null;
 
 function showBanner(message) {
   banner.hidden = !message;
@@ -222,7 +221,7 @@ function renderIndicators(visibleCount) {
   }
 
   indicatorBar.append(chip("Launch", launchMode === "blob" ? "Blob URL" : "about:blank", "accent"));
-  indicatorBar.append(chip("Read", hasFolderAccess() ? "Folder" : location.protocol === "file:" ? "Blocked" : "HTTP", hasFolderAccess() ? "ok" : location.protocol === "file:" ? "busy" : "muted"));
+  indicatorBar.append(chip("Read", "jsDelivr", "ok"));
 
   if (client) {
     indicatorBar.append(chip("Selected", client.name, "ok"));
@@ -287,8 +286,8 @@ function renderPacks() {
     const dotClass = !client ? "ind-dot--muted" : compatible ? "ind-dot--ok" : "ind-dot--warn";
     const fitLabel = !client ? "Pick a client to check fit" : compatible ? "Fits selected client" : "Wrong MC version";
     link.className = `pack${compatible ? "" : " is-incompatible"}${!client ? " is-neutral" : ""}`;
-    link.href = encodeURI(pack.file);
-    link.download = pack.filename;
+    link.href = cdnUrl(pack.file).href;
+    link.rel = "noopener noreferrer";
     link.innerHTML = `
       <div class="pack-row">
         <span class="ind-dot ${dotClass}" aria-hidden="true"></span>
@@ -503,180 +502,20 @@ async function streamToBlob(stream, total, type, onProgress, signal) {
   return new Blob(chunks, { type });
 }
 
-function hasFolderAccess() {
-  return Boolean(rootDirHandle || (pickedFiles && pickedFiles.length));
-}
-
-function fetchUrlFor(path) {
+function cdnUrl(path, base = CDN_BASE) {
   const encoded = String(path)
     .replace(/\\/g, "/")
     .split("/")
     .filter(Boolean)
     .map(encodeURIComponent)
     .join("/");
-  return new URL(encoded, window.location.href);
-}
-
-function openIdb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open("eag1er", 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore("kv");
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbGet(key) {
-  const db = await openIdb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const req = db.transaction("kv", "readonly").objectStore("kv").get(key);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function idbSet(key, value) {
-  const db = await openIdb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("kv", "readwrite");
-      tx.objectStore("kv").put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function blobFromDiskFile(file, onProgress, signal) {
-  if (typeof file.stream === "function") {
-    return streamToBlob(file.stream(), file.size, "text/html", onProgress, signal);
-  }
-  onProgress(0, 0, file.size);
-  const blob = new Blob([await file.arrayBuffer()], { type: "text/html" });
-  onProgress(100, blob.size, blob.size);
-  return blob;
-}
-
-async function fileFromDirectoryHandle(root, path) {
-  const parts = String(path).replace(/\\/g, "/").split("/").filter(Boolean);
-  const tryWalk = async (startParts) => {
-    let dir = root;
-    for (let i = 0; i < startParts.length - 1; i += 1) {
-      dir = await dir.getDirectoryHandle(startParts[i]);
-    }
-    const handle = await dir.getFileHandle(startParts[startParts.length - 1]);
-    return handle.getFile();
-  };
-  try {
-    return await tryWalk(parts);
-  } catch {
-    if (parts.length > 1) return tryWalk(parts.slice(1));
-    throw new Error(`Could not read ${path} from the selected folder.`);
-  }
-}
-
-function findPickedFile(files, path) {
-  const wanted = String(path).replace(/\\/g, "/").toLowerCase();
-  const wantedName = fileName(wanted).toLowerCase();
-  let named = null;
-  for (const file of files) {
-    const rel = String(file.webkitRelativePath || file.name).replace(/\\/g, "/").toLowerCase();
-    if (rel === wanted || rel.endsWith(`/${wanted}`)) return file;
-    if (file.name.toLowerCase() === wantedName) named = named || file;
-  }
-  return named;
-}
-
-function pickFolderWithInput() {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.setAttribute("webkitdirectory", "");
-    input.multiple = true;
-    input.addEventListener("change", () => {
-      const files = [...(input.files || [])];
-      if (!files.length) {
-        reject(new Error("No folder selected."));
-        return;
-      }
-      resolve(files);
-    });
-    input.addEventListener("cancel", () => reject(new Error("Folder access cancelled.")));
-    input.click();
-  });
-}
-
-async function ensureDirPermission(handle) {
-  const opts = { mode: "read" };
-  if (handle.queryPermission) {
-    const current = await handle.queryPermission(opts);
-    if (current === "granted") return true;
-  }
-  if (handle.requestPermission) {
-    return (await handle.requestPermission(opts)) === "granted";
-  }
-  return true;
-}
-
-async function restoreFolderAccess() {
-  try {
-    const saved = await idbGet("rootDir");
-    if (saved && (await ensureDirPermission(saved))) {
-      rootDirHandle = saved;
-    }
-  } catch {
-    rootDirHandle = null;
-  }
-  updateAccessUi();
-}
-
-function updateAccessUi() {
-  const granted = hasFolderAccess();
-  if (grantBtn) {
-    grantBtn.hidden = location.protocol !== "file:";
-    grantBtn.textContent = granted ? "Folder access on" : "Allow folder access";
-    grantBtn.classList.toggle("is-granted", granted);
-  }
-  if (catalog.length) renderIndicators(visibleItems().length);
-}
-
-async function grantFolderAccess() {
-  try {
-    if (window.showDirectoryPicker) {
-      const handle = await window.showDirectoryPicker({
-        id: "eag1er-root",
-        mode: "read",
-      });
-      if (!(await ensureDirPermission(handle))) {
-        throw new Error("Folder permission was not granted.");
-      }
-      rootDirHandle = handle;
-      pickedFiles = null;
-      await idbSet("rootDir", handle);
-    } else {
-      pickedFiles = await pickFolderWithInput();
-      rootDirHandle = null;
-    }
-    updateAccessUi();
-    showBanner("");
-  } catch (error) {
-    if (error?.name === "AbortError") return;
-    showBanner(error.message || "Folder access was not granted.");
-  }
+  return new URL(encoded, base);
 }
 
 async function readClientHttp(url, onProgress, signal) {
-  const response = await fetch(url, { signal });
+  const response = await fetch(url, { signal, mode: "cors" });
   if (!response.ok) {
-    throw new Error(`Could not fetch ${url.pathname} (${response.status})`);
+    throw new Error(`Could not fetch ${url.href} (${response.status})`);
   }
   const total = Number(response.headers.get("Content-Length")) || 0;
   if (response.body) {
@@ -687,34 +526,12 @@ async function readClientHttp(url, onProgress, signal) {
   return blob;
 }
 
-async function readClientFromFolder(path, onProgress, signal) {
-  if (rootDirHandle && !(await ensureDirPermission(rootDirHandle))) {
-    rootDirHandle = null;
-  }
-
-  if (rootDirHandle) {
-    const file = await fileFromDirectoryHandle(rootDirHandle, path);
-    return blobFromDiskFile(file, onProgress, signal);
-  }
-
-  if (pickedFiles?.length) {
-    const file = findPickedFile(pickedFiles, path);
-    if (!file) throw new Error(`Select the launcher folder that contains ${path}.`);
-    return blobFromDiskFile(file, onProgress, signal);
-  }
-
-  throw new Error("Allow folder access, then press Play again.");
-}
-
 async function loadClientBlob(path, onProgress, signal) {
-  if (hasFolderAccess()) {
-    return readClientFromFolder(path, onProgress, signal);
-  }
   try {
-    return await readClientHttp(fetchUrlFor(path), onProgress, signal);
+    return await readClientHttp(cdnUrl(path), onProgress, signal);
   } catch (error) {
     if (error?.name === "AbortError") throw error;
-    return readClientFromFolder(path, onProgress, signal);
+    return readClientHttp(cdnUrl(path, GITHUB_RAW_BASE), onProgress, signal);
   }
 }
 
@@ -779,11 +596,6 @@ async function playInLauncher(item, mode, blob) {
 
 async function launch(item) {
   const mode = launchMode;
-  if (location.protocol === "file:" && !hasFolderAccess()) {
-    await grantFolderAccess();
-    if (!hasFolderAccess()) return;
-  }
-
   // Open the tab while the click is still a user gesture. Re-rendering the
   // grid first removes the Play button and browsers then block window.open.
   const win = openBlankWindow();
@@ -804,7 +616,7 @@ async function launch(item) {
 
   overlay.hidden = false;
   overlayTitle.textContent = item.name;
-  setProgress(0, "Reading client HTML…", 0, item.size);
+  setProgress(0, "Fetching from CDN…", 0, item.size);
   render();
 
   const inPage = !win;
@@ -827,7 +639,7 @@ async function launch(item) {
       item.file,
       (percent, received, total) => {
         if (gen !== launchGen) return;
-        setProgress(percent, "Reading client HTML…", received, total);
+        setProgress(percent, "Fetching from CDN…", received, total);
       },
       controller.signal,
     );
@@ -871,11 +683,7 @@ async function launch(item) {
 function loadCatalog() {
   catalog = sortCatalog(FALLBACK_FILES.map((entry) => parseClientFile(entry)));
   packs = FALLBACK_PACKS.map((entry) => parsePackFile(entry));
-  if (location.protocol === "file:" && !hasFolderAccess()) {
-    showBanner("This browser cannot fetch local HTML from file://. Click Allow folder access, pick this launcher folder, then Play. The HTML is still written into about:blank or a blob URL.");
-  } else {
-    showBanner("");
-  }
+  showBanner("");
   render();
 }
 
@@ -885,9 +693,4 @@ bindLaunchMode();
 search.addEventListener("input", render);
 cancelBtn.addEventListener("click", cancelCurrentLaunch);
 closeStageBtn.addEventListener("click", closeStage);
-if (grantBtn) grantBtn.addEventListener("click", grantFolderAccess);
-restoreFolderAccess().then(() => {
-  if (hasFolderAccess()) showBanner("");
-  render();
-});
 loadCatalog();
